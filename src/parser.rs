@@ -77,6 +77,9 @@ pub fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, String> {
                 TokenType::Unknown(value) => {
                     return Err(format!("Unknown token: {}, index: {}", value, index))
                 },
+                TokenType::NewLine => {
+                    index = index + 1
+                }
                 _ => {
                     return Err(format!("Invalid token: {:?}, index: {}", value, index))
                 }
@@ -104,7 +107,7 @@ fn parse_define(value: &str, tokens: &[TokenType], index: usize) -> Result<(Stat
     let (expr, next_index) = parse_expression(&tokens, next_index)?;
 
     let next_index = if let Some(value) = tokens.get(next_index) {
-        if &TokenType::Semicolon == value {
+        if &TokenType::Semicolon == value || &TokenType::NewLine == value {
             next_index + 1
         } else {
             return Err(format!("Invalid token in define variable: {:?}, index: {}", value, index))
@@ -163,7 +166,7 @@ fn parse_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, u
             patterns.push(pattern);
             next_index = index;
         } else {
-            break;
+            return Err(format!("Next pattern is nothing in patterns. index: {}", next_index))
         }
     }
 
@@ -278,12 +281,43 @@ fn parse_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), Str
 
 
 #[cfg(test)]
-mod tests {
+mod parse_test {
+    use super::Statement;
+
+    fn execute(s: &str) -> Result<Vec<Statement>, String> {
+        let tokens = crate::lexer::lexer(s);
+        crate::parser::parse(&tokens)
+    }
+    
     #[test]
-    fn parse_test() {
-        let text = String::from(r#"
-        Cs = "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
-        Ce = "b" | "d" | "g" | "m" | "n" | "h";
+    fn default() {
+        let result = execute(r#"
+        Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
+        Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
+
+        Va = "a" | "á" | "à" | "ä"
+        Ve = "e" | "é" | "è" | "ë"
+        Vi = "i" | "í" | "ì" | "ï"
+        Vo = "o" | "ó" | "ò" | "ö"
+        Vu = "u" | "ú" | "ù" | "ü"
+        Vy = "y" | "ý" | "ỳ" | "ÿ"
+
+        Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e"
+        Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i"
+        Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu
+
+        % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ "y" | ^ "ý" | ^ "ỳ" | ^ "ÿ" | ^ "wu" | ^ "wú" | ^ "wù" | ^ "wü" | ^ "hy" | ^ "hý" | ^ "hỳ" | ^ "hÿ" | ^ "qy" | ^ "qý" | ^ "qỳ" | ^ "qÿ" | ^ "ry" | ^ "rý" | ^ "rỳ" | ^ "rÿ" | ^ "ny" | ^ "ný" | ^ "nỳ" | ^ "nÿ" | ^ "my" | ^ "mý" | ^ "mỳ" | ^ "mÿ";
+        "#);
+
+        println!("{:?}", result);
+        assert!(result.is_ok())
+    }
+
+    #[test]
+    fn use_semicolon() {
+        let result = execute(r#"
+        Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+        Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 
         Va = "a" | "á" | "à" | "ä";
         Ve = "e" | "é" | "è" | "ë";
@@ -292,25 +326,57 @@ mod tests {
         Vu = "u" | "ú" | "ù" | "ü";
         Vy = "y" | "ý" | "ỳ" | "ÿ";
 
-        V1i = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
-        V2i = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
-        V3i = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
-        V4i = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
-        V1u = Va "u" | Vo "u" | Vu "e" | Vu "i";
-        V2u = Va "u" | Vo "u" | Vu "e" | Vu "i";
-        V3u = Va "u" | Vo "u" | Vu "e" | Vu "i";
-        V4u = Va "u" | Vo "u" | Vu "e" | Vu "i";
+        Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
+        Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i";
+        Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
 
-        Vx1 = Va | Ve | Vi | Vo | Vu | Vy;
-        Vx2 = V1i | V2i | V3i | V4i | V1u | V1u | V2u | V3u | V4u;
-        VCx = Vx1 Ce | Vx2 Ce | Cs Vx1 Ce | Cs Vx2 Ce - "á" | "à" | "é" | "è" | "í" | "ì" | "ó" | "ò" | "ú" | "ù" | "ý" | "ỳ" ;
-
-        % Vx1 | Vx2 | Cs Vx1 | Cs Vx2 | VCx - ^ "y" | ^ "ý" | ^ "ỳ" | ^ "ÿ" | ^ "wu" | ^ "wú" | ^ "wù" | ^ "wü" | ^ "hy" | ^ "hý" | ^ "hỳ" | ^ "hÿ" | ^ "qy" | ^ "qý" | ^ "qỳ" | ^ "qÿ" | ^ "ry" | ^ "rý" | ^ "rỳ" | ^ "rÿ" | ^ "ny" | ^ "ný" | ^ "nỳ" | ^ "nÿ" | ^ "my" | ^ "mý" | ^ "mỳ" | ^ "mÿ";
+        % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ "y" | ^ "ý" | ^ "ỳ" | ^ "ÿ" | ^ "wu" | ^ "wú" | ^ "wù" | ^ "wü" | ^ "hy" | ^ "hý" | ^ "hỳ" | ^ "hÿ" | ^ "qy" | ^ "qý" | ^ "qỳ" | ^ "qÿ" | ^ "ry" | ^ "rý" | ^ "rỳ" | ^ "rÿ" | ^ "ny" | ^ "ný" | ^ "nỳ" | ^ "nÿ" | ^ "my" | ^ "mý" | ^ "mỳ" | ^ "mÿ";
         "#);
-        let tokens = crate::lexer::lexer(&text);
-        let parsed = crate::parser::parse(&tokens);
-        
-        println!("{:?}", parsed);
-        assert!(parsed.is_ok())
+
+        println!("{:?}", result);
+        assert!(result.is_ok())
+    }
+
+    #[test]
+    fn multiple_define_in_line() {
+        let result = execute(r#"
+        C = "p" | "f" | "t" | "s" | "k" | "h"; V = "a" | "i" | "u";
+
+        % C V | C V C | V C | V C V;
+        "#);
+
+        println!("{:?}", result);
+        assert!(result.is_ok())
+    }
+
+    #[test]
+    fn nothing_semicolon() {
+        let result = execute(r#"
+        C = "p" | "f" | "t" | "s" | "k" | "h"
+        V = "a" | "i" | "u"
+
+        # invalid statement in generate.
+        # semicolon is nothing.
+        % C V | C V C | V C | V C V
+        "#);
+
+        println!("{:?}", result);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().starts_with("Invalid token in generate: NewLine"))
+    }
+
+    #[test]
+    fn invalid_define_variable() {
+        let result = execute(r#"
+        C = "p" | "f" | "t" |
+            "s" | "k" | "h";
+        V = "a" | "i" | "u";
+
+        % C V | C V C | V C | V C V;
+        "#);
+
+        println!("{:?}", result);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().starts_with("Next pattern is nothing in patterns."))
     }
 }

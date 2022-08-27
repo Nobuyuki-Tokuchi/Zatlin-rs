@@ -12,6 +12,8 @@ pub enum TokenType {
     Value(String),
     Count(usize),
     Variable(String),
+    LeftCirc,
+    RightCirc,
     NewLine,
 }
 
@@ -110,6 +112,8 @@ fn get_tokentype(value: char) -> TokenType {
         '%' => TokenType::Percent,
         '^' => TokenType::Circumflex,
         '=' => TokenType::Equal,
+        '(' => TokenType::LeftCirc,
+        ')' => TokenType::RightCirc,
         _ => TokenType::Unknown(String::from(value)),
     }
 }
@@ -126,6 +130,7 @@ mod lexer_test {
     #[test]
     fn default() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
 
@@ -159,6 +164,7 @@ mod lexer_test {
     #[test]
     fn use_semicolon() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 
@@ -187,5 +193,46 @@ mod lexer_test {
 
         println!("{:?}", unknown_tokens);
         assert!(!unknown_tokens.is_empty());
+    }
+
+    #[test]
+    fn unofficial() {
+        let result = execute(r#"
+        # metapi
+        Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+        Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+        
+        Va = "a" | "á" | "à" | "ä";
+        Ve = "e" | "é" | "è" | "ë";
+        Vi = "i" | "í" | "ì" | "ï";
+        Vo = "o" | "ó" | "ò" | "ö";
+        Vu = "u" | "ú" | "ù" | "ü";
+        Vy = "y" | "ý" | "ỳ" | "ÿ";
+        
+        Vxi = (Va | Ve | Vo) "i" | Vi ( "a" | "e" );
+        Vxu = ( Va | Vo ) "u" | Vu ("e" | "i");
+        Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+        % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ ("" | "w" | "h" | "q" | "r" | "n" | "m") ("y" | "ý" | "ỳ" | "ÿ");
+        "#);
+
+        println!("{:?}", result);
+        
+        let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
+            match x {
+                TokenType::Unknown(_) => true,
+                _ => true
+            }
+        }).collect();
+        let circ_check = result.iter().fold(0, |acc, x| {
+            match x {
+                TokenType::LeftCirc => acc + 1,
+                TokenType::RightCirc => acc - 1,
+                _ => acc
+            }
+        });
+
+        println!("{:?}", unknown_tokens);
+        assert!(!unknown_tokens.is_empty());
+        assert_eq!(circ_check, 0);
     }
 }

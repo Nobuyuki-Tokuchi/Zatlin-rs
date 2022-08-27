@@ -80,9 +80,9 @@ fn execute_expression(expr: &Expression, variables: &HashMap<String, &Expression
     Ok(result)
 }
 
-fn contains_excludes(excludes: &Vec<ExcludePattern>, result: &str) -> bool {
+fn contains_excludes(excludes: &Vec<Pattern>, result: &str) -> bool {
     excludes.iter().any(|x| {
-        let check = x.values.iter().fold(String::default(), |acc, x| acc + &x.value);
+        let check = x.values.iter().fold(String::default(), |acc, x| acc + match x { Value::Literal(s) => s, _ => "" });
         match x.mode {
             ExtractMode::None => result.contains(&check),
             ExtractMode::Forward => result.starts_with(&check),
@@ -105,15 +105,20 @@ fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, &Expression>, 
 }
 
 fn execute_value(value: &Value, variables: &HashMap<String, &Expression>, random: &mut ThreadRng) -> Result<String, String> {
-    if value.is_variable {
-        if let Some(expr) = variables.get(&value.value) {
+    match value {
+        Value::Variable(key) => {
+            if let Some(expr) = variables.get(key) {
+                let mut random = random;
+                execute_expression(expr, &variables, &mut random)
+            } else {
+                Err(format!("Not found variable: {}", key))
+            }
+        },
+        Value::Literal(val) => Ok(val.to_owned()),
+        Value::InnerPattern(patterns) => {
             let mut random = random;
-            execute_expression(expr, &variables, &mut random)
-        } else {
-            Err(format!("Not found variable: {}", value.value))
-        }
-    } else {
-        Ok(value.value.clone())
+            execute_expression(&Expression { patterns: patterns.to_owned(), excludes: Vec::new() }, &variables, &mut random)
+        },
     }
 }
 
@@ -127,6 +132,7 @@ mod generate_test {
     #[test]
     fn default() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
 
@@ -158,6 +164,7 @@ mod generate_test {
     #[test]
     fn use_semicolon() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 
@@ -207,5 +214,36 @@ mod generate_test {
         }
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), String::from("Not found variable: X"))
+    }
+
+    #[test]
+    fn unofficial() {
+        let result = execute(r#"
+        # metapi
+        Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+        Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+        
+        Va = "a" | "á" | "à" | "ä";
+        Ve = "e" | "é" | "è" | "ë";
+        Vi = "i" | "í" | "ì" | "ï";
+        Vo = "o" | "ó" | "ò" | "ö";
+        Vu = "u" | "ú" | "ù" | "ü";
+        Vy = "y" | "ý" | "ỳ" | "ÿ";
+        
+        Vxi = (Va | Ve | Vo) "i" | Vi ( "a" | "e" );
+        Vxu = ( Va | Vo ) "u" | Vu ("e" | "i");
+        Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+        % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ ("" | "w" | "h" | "q" | "r" | "n" | "m") ("y" | "ý" | "ỳ" | "ÿ");
+        "#);
+
+        match &result {
+            Ok(value) => {
+                println!("{}", value.join(" "));
+            },
+            Err(message) => {
+                println!("{}", message);
+            },
+        }
+        assert!(result.is_ok());
     }
 }

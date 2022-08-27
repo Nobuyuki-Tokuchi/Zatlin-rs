@@ -1,6 +1,5 @@
 
-
-use crate::lexer::{TokenType};
+use crate::lexer::TokenType;
 
 #[derive(Debug, Clone)]
 pub enum Statement {
@@ -11,18 +10,13 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct Expression {
     pub patterns: Vec<Pattern>,
-    pub excludes: Vec<ExcludePattern>,
+    pub excludes: Vec<Pattern>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Pattern {
     pub values: Vec<Value>,
     pub count: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExcludePattern {
-    pub values: Vec<Value>,
     pub mode: ExtractMode,
 }
 
@@ -34,24 +28,29 @@ pub enum ExtractMode {
     Exact,
 }
 
+impl Pattern {
+    fn new(values: Vec<Value>, count: usize) -> Self {
+        Self { values, count, mode: ExtractMode::None }
+    }
+
+    fn exclude_new(values: Vec<Value>, mode: ExtractMode) -> Self {
+        Self { values, count: 0, mode }
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct Value {
-    pub value: String,
-    pub is_variable: bool,
+pub enum Value {
+    Literal(String),
+    Variable(String),
+    InnerPattern(Vec<Pattern>)
 }
 
 impl Value {
-    fn literal(value: &str) -> Self {
-        Value {
-            value: String::from(value),
-            is_variable: false,
-        }
-    }
-
-    fn variable(value: &str) -> Self {
-        Value {
-            value: String::from(value),
-            is_variable: true,
+    pub fn is_variable(&self) -> bool {
+        if let &Self::Variable(_) = self {
+            true
+        } else {
+            false
         }
     }
 }
@@ -106,33 +105,29 @@ fn parse_define(value: &str, tokens: &[TokenType], index: usize) -> Result<(Stat
 
     let (expr, next_index) = parse_expression(&tokens, next_index)?;
 
-    let next_index = if let Some(value) = tokens.get(next_index) {
-        if &TokenType::Semicolon == value || &TokenType::NewLine == value {
-            next_index + 1
+    if let Some(token) = tokens.get(next_index) {
+        if &TokenType::Semicolon == token || &TokenType::NewLine == token {
+            Ok((Statement::Define(value.to_string(), expr), next_index + 1))
         } else {
-            return Err(format!("Invalid token in define variable: {:?}, index: {}", value, index))
+            Err(format!("Invalid token in define variable: {:?}, index: {}", token, index))
         }
     } else {
-        return Err(format!("End of token in define variable. index: {}", next_index))
-    };
-
-    Ok((Statement::Define(value.to_string(), expr), next_index))
+        Err(format!("End of token in define variable. index: {}", next_index))
+    }
 }
 
 fn parse_generate(tokens: &[TokenType], index: usize) -> Result<(Statement, usize), String> {
     let (expr, next_index) = parse_expression(&tokens, index)?;
 
-    let next_index = if let Some(value) = tokens.get(next_index) {
-        if &TokenType::Semicolon == value {
-            next_index + 1
+    if let Some(token) = tokens.get(next_index) {
+        if &TokenType::Semicolon == token {
+            Ok((Statement::Generate(expr), next_index + 1))
         } else {
-            return Err(format!("Invalid token in generate: {:?}, index: {}", value, index))
+            Err(format!("Invalid token in generate: {:?}, index: {}", token, index))
         }
     } else {
-        return Err(format!("End of token in generate. index: {}", next_index))
-    };
-
-    Ok((Statement::Generate(expr), next_index))
+        Err(format!("End of token in generate. index: {}", next_index))
+    }
 }
 
 fn parse_expression(tokens: &[TokenType], index: usize) -> Result<(Expression, usize), String> {
@@ -143,8 +138,36 @@ fn parse_expression(tokens: &[TokenType], index: usize) -> Result<(Expression, u
     } else {
         (Vec::new(), next_index)
     };
+    let excludes = expand_exclude_inner_pattern(excludes);
 
-    Ok((Expression { patterns: patterns, excludes: excludes }, next_index))
+    Ok((Expression { patterns, excludes }, next_index))
+}
+
+fn expand_exclude_inner_pattern(patterns: Vec<Pattern>) -> Vec<Pattern> {
+    let mut result_list: Vec<Pattern> = vec![];
+
+    for pattern in patterns.into_iter() {
+        let mut value_list: Vec<String> = vec![String::new()];
+        for value in pattern.values.into_iter() {
+            match value {
+                Value::Literal(literal) => {
+                    value_list = value_list.into_iter().map(|x| x + &literal).collect();
+                },
+                Value::Variable(_) => { },
+                Value::InnerPattern(inner_patterns) => {
+                    value_list = expand_exclude_inner_pattern(inner_patterns).into_iter().flat_map(|x| x.values).flat_map(|x| {
+                        match x {
+                            Value::Literal(s) => value_list.iter().map(|y| y.clone() + &s).collect(),
+                            _ => Vec::new(),
+                        }
+                    }).collect();
+                }
+            }
+        }
+        result_list.push(Pattern::exclude_new(value_list.into_iter().map(|x| Value::Literal(x)).collect(), pattern.mode))
+    }
+
+    result_list
 }
 
 fn parse_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, usize), String> {
@@ -188,10 +211,53 @@ fn parse_pattern(tokens: &[TokenType], index: usize) -> Result<(Pattern, usize),
         }
     };
 
-    Ok((Pattern { values: values, count: count }, next_index))
+    Ok((Pattern::new(values, count), next_index))
 }
 
-fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<ExcludePattern>, usize), String> {
+fn parse_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize), String> {
+    let (value, mut next_index) = parse_value(&tokens, index)?;
+    let mut values = vec![value];
+
+    loop {
+        if let Ok((value, index)) = parse_value(&tokens, next_index) {
+            values.push(value);
+            next_index = index;
+        } else {
+            break;
+        }
+    }
+
+    Ok((values, next_index))
+}
+
+fn parse_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), String> {
+    if let Some(token) = tokens.get(index) {
+        match token {
+            TokenType::Value(value) => Ok((Value::Literal(value.clone()), index + 1)),
+            TokenType::Variable(value) => Ok((Value::Variable(value.clone()), index + 1)),
+            TokenType::LeftCirc => parse_inner_patterns(&tokens, index + 1),
+            _ => Err(format!("Invalid token in value: {:?}, index: {}", token, index)),
+        }
+    } else {
+        Err(format!("End of token in value. index: {}", index))
+    }
+}
+
+fn parse_inner_patterns(tokens: &[TokenType], index: usize) -> Result<(Value, usize), String> {
+    let (patterns, next_index) = parse_patterns(&tokens, index)?;
+
+    if let Some(token) = tokens.get(next_index) {
+        if &TokenType::RightCirc == token {
+            Ok((Value::InnerPattern(patterns), next_index + 1))
+        } else {
+            Err(format!("Invalid token in inner patterns: {:?}, index: {}", token, index))
+        }
+    } else {
+        Err(format!("End of token in inner patterns. index: {}", next_index))
+    }
+}
+
+fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, usize), String> {
     let (pattern, mut next_index) = parse_exclude_pattern(&tokens, index)?;
     let mut patterns = vec![pattern];
 
@@ -217,7 +283,7 @@ fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Exc
     Ok((patterns, next_index))
 }
 
-fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(ExcludePattern, usize), String> {
+fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(Pattern, usize), String> {
     let (is_prefix, next_index) = if let Some(token) = tokens.get(index) {
         match token {
             TokenType::Circumflex => (true, index + 1),
@@ -227,8 +293,8 @@ fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(ExcludeP
         return Err(format!("End of token in exclude pattern (prefix). index: {}", index))
     };
     
-    let (values, next_index) = parse_values(&tokens, next_index)?;
-    if values.iter().any(|x| x.is_variable) {
+    let (values, next_index) = parse_exclude_values(&tokens, next_index)?;
+    if values.iter().any(|x| x.is_variable()) {
         return Err(String::from("Exclude Pattern can't include variable."))
     }
     
@@ -248,15 +314,15 @@ fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(ExcludeP
         (true, true) => ExtractMode::Exact,
     };
 
-    Ok((ExcludePattern { values: values, mode: mode }, next_index))
+    Ok((Pattern::exclude_new(values, mode), next_index))
 }
 
-fn parse_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize), String> {
-    let (value, mut next_index) = parse_value(&tokens, index)?;
+fn parse_exclude_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize), String> {
+    let (value, mut next_index) = parse_exclude_value(&tokens, index)?;
     let mut values = vec![value];
 
     loop {
-        if let Ok((value, index)) = parse_value(&tokens, next_index) {
+        if let Ok((value, index)) = parse_exclude_value(&tokens, next_index) {
             values.push(value);
             next_index = index;
         } else {
@@ -267,18 +333,31 @@ fn parse_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize
     Ok((values, next_index))
 }
 
-fn parse_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), String> {
+fn parse_exclude_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), String> {
     if let Some(token) = tokens.get(index) {
         match token {
-            TokenType::Value(value) => Ok((Value::literal(&value), index + 1)),
-            TokenType::Variable(value) => Ok((Value::variable(&value), index + 1)),
+            TokenType::Value(value) => Ok((Value::Literal(value.clone()), index + 1)),
+            TokenType::LeftCirc => parse_exclude_inner_patterns(&tokens, index + 1),
             _ => Err(format!("Invalid token in value: {:?}, index: {}", token, index)),
         }
     } else {
-        Err(format!("End of token in value. index: {}", index))
+        Err(format!("End of token in exclude value. index: {}", index))
     }
 }
 
+fn parse_exclude_inner_patterns(tokens: &[TokenType], index: usize) -> Result<(Value, usize), String> {
+    let (patterns, next_index) = parse_exclude_patterns(&tokens, index)?;
+
+    if let Some(token) = tokens.get(next_index) {
+        if &TokenType::RightCirc == token {
+            Ok((Value::InnerPattern(patterns), next_index + 1))
+        } else {
+            Err(format!("Invalid token in exclude inner patterns: {:?}, index: {}", token, index))
+        }
+    } else {
+        Err(format!("End of token in exclude inner patterns. index: {}", next_index))
+    }
+}
 
 #[cfg(test)]
 mod parse_test {
@@ -292,6 +371,7 @@ mod parse_test {
     #[test]
     fn default() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
 
@@ -316,6 +396,7 @@ mod parse_test {
     #[test]
     fn use_semicolon() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 
@@ -334,7 +415,7 @@ mod parse_test {
         "#);
 
         println!("{:?}", result);
-        assert!(result.is_ok())
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -347,6 +428,32 @@ mod parse_test {
 
         println!("{:?}", result);
         assert!(result.is_ok())
+    }
+
+    #[test]
+    fn expand_exclude_check() {
+        let result = execute(r#"
+        C = "p" | "f" | "t" | "s" | "k" | "h";
+        V = "a" | "i" | "u";
+
+        % C V | C V C | V C | V C V | C C V C | C V C C - "h" "u" | "a" "h" ^ | "i" "h" ^ | "u" "h" ^ | "f" "h" | "s" "h";
+        "#);
+
+        println!("{:?}", result);
+        assert!(result.is_ok());
+
+        let excludes_check: bool = result.unwrap().iter().fold(true, |acc, x| {
+            acc && match x {
+                Statement::Define(_, expr) | Statement::Generate(expr) => {
+                    if expr.excludes.is_empty() {
+                        true
+                    } else {
+                        expr.excludes.iter().any(|x| x.values.len() == 1)
+                    }
+                }
+            }
+        });
+        assert!(excludes_check);
     }
 
     #[test]
@@ -378,5 +485,29 @@ mod parse_test {
         println!("{:?}", result);
         assert!(result.is_err());
         assert!(result.unwrap_err().starts_with("Next pattern is nothing in patterns."))
+    }
+
+    #[test]
+    fn unofficial() {
+        let parsed = execute(r#"
+        # metapi
+        Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+        Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+        
+        Va = "a" | "á" | "à" | "ä";
+        Ve = "e" | "é" | "è" | "ë";
+        Vi = "i" | "í" | "ì" | "ï";
+        Vo = "o" | "ó" | "ò" | "ö";
+        Vu = "u" | "ú" | "ù" | "ü";
+        Vy = "y" | "ý" | "ỳ" | "ÿ";
+        
+        Vxi = (Va | Ve | Vo) "i" | Vi ( "a" | "e" );
+        Vxu = ( Va | Vo ) "u" | Vu ("e" | "i");
+        Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+        % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ ("" | "w" | "h" | "q" | "r" | "n" | "m") ("y" | "ý" | "ỳ" | "ÿ");
+        "#);
+
+        println!("{:?}", parsed);
+        assert!(parsed.is_ok())
     }
 }

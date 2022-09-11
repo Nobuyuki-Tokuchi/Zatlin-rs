@@ -60,6 +60,12 @@ pub fn lexer(text: &str) -> Vec<TokenType> {
                     tokens.push(get_tokentype(c));
                 },
                 '#' => {
+                    if !buffer.is_empty() {
+                        let token = String::from_iter(buffer.iter());
+                        tokens.push(get_value(&token));
+                        buffer.clear();
+                    }
+
                     mode = TokenizeMode::Comment;
                 },
                 '"' => {
@@ -126,6 +132,7 @@ mod lexer_test {
     #[test]
     fn default() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
 
@@ -159,6 +166,7 @@ mod lexer_test {
     #[test]
     fn use_semicolon() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 

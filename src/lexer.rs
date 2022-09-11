@@ -62,6 +62,12 @@ pub fn lexer(text: &str) -> Vec<TokenType> {
                     tokens.push(get_tokentype(c));
                 },
                 '#' => {
+                    if !buffer.is_empty() {
+                        let token = String::from_iter(buffer.iter());
+                        tokens.push(get_value(&token));
+                        buffer.clear();
+                    }
+
                     mode = TokenizeMode::Comment;
                 },
                 '"' => {

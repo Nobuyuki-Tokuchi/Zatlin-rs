@@ -1,7 +1,9 @@
+use std::fmt::Display;
+
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum TokenType {
+pub(crate) enum TokenType {
     Unknown(String),
     Minus,
     Or,
@@ -12,10 +14,37 @@ pub enum TokenType {
     Value(String),
     Count(usize),
     Variable(String),
+    NewLine,
     LeftCirc,
     RightCirc,
-    NewLine,
+    Colon,
+    LeftArrow,
+    Comma,
 }
+
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Self::Unknown(token) => write!(f, "{}", token),
+            Self::Minus => write!(f, "-"),
+            Self::Or => write!(f, "|"),
+            Self::Equal => write!(f, "="),
+            Self::Circumflex => write!(f, "^"),
+            Self::Percent => write!(f, "%"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Value(token) => write!(f, "\"{}\"", token),
+            Self::Count(token) => write!(f, "{}", token),
+            Self::Variable(token) => write!(f, "{}", token),
+            Self::NewLine => write!(f, "(NewLine)"),
+            Self::LeftCirc => write!(f, "("),
+            Self::RightCirc => write!(f, ")"),
+            Self::Colon => write!(f, ":"),
+            Self::LeftArrow => write!(f, "<-"),
+            Self::Comma => write!(f, ","),
+        }
+    }
+}
+
 
 #[derive(PartialEq, Copy, Clone)]
 enum TokenizeMode {
@@ -24,7 +53,7 @@ enum TokenizeMode {
     Comment,
 }
 
-pub fn lexer(text: &str) -> Vec<TokenType> {
+pub(crate) fn lexer(text: &str) -> Vec<TokenType> {
     let text = text.chars();
 
     let mut tokens: Vec<TokenType> = vec![];
@@ -52,7 +81,7 @@ pub fn lexer(text: &str) -> Vec<TokenType> {
             }
         } else {
             match c {
-                '-' | '|' | ';' | '%' | '^' | '=' | '(' | ')' => {
+                '|' | ';' | '%' | '^' | '=' | '(' | ')' | ':' | ',' => {
                     if !buffer.is_empty() {
                         let token = String::from_iter(buffer.iter());
                         tokens.push(get_value(&token));
@@ -81,6 +110,20 @@ pub fn lexer(text: &str) -> Vec<TokenType> {
                     } else {
                         mode = TokenizeMode::String;
                         buffer.push(c);
+                    }
+                },
+                '-' => {
+                    let token = String::from_iter(buffer.iter());
+                    if token == "<" {
+                        tokens.push(TokenType::LeftArrow);
+                        buffer.clear();
+                    } else {
+                        if !buffer.is_empty() {
+                            tokens.push(get_value(&token));
+                            buffer.clear();
+                        }
+
+                        tokens.push(get_tokentype(c));
                     }
                 },
                 _ => {
@@ -120,6 +163,8 @@ fn get_tokentype(value: char) -> TokenType {
         '=' => TokenType::Equal,
         '(' => TokenType::LeftCirc,
         ')' => TokenType::RightCirc,
+        ':' => TokenType::Colon,
+        ',' => TokenType::Comma,
         _ => TokenType::Unknown(String::from(value)),
     }
 }
@@ -159,12 +204,12 @@ mod lexer_test {
         let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
             match x {
                 TokenType::Unknown(_) => true,
-                _ => true
+                _ => false
             }
         }).collect();
 
         println!("{:?}", unknown_tokens);
-        assert!(!unknown_tokens.is_empty());
+        assert!(unknown_tokens.is_empty());
     }
 
     #[test]
@@ -193,16 +238,16 @@ mod lexer_test {
         let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
             match x {
                 TokenType::Unknown(_) => true,
-                _ => true
+                _ => false
             }
         }).collect();
 
         println!("{:?}", unknown_tokens);
-        assert!(!unknown_tokens.is_empty());
+        assert!(unknown_tokens.is_empty());
     }
 
     #[test]
-    fn unofficial() {
+    fn unofficial_circ() {
         let result = execute(r#"
         # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
@@ -226,7 +271,7 @@ mod lexer_test {
         let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
             match x {
                 TokenType::Unknown(_) => true,
-                _ => true
+                _ => false
             }
         }).collect();
         let circ_check = result.iter().fold(0, |acc, x| {
@@ -238,7 +283,36 @@ mod lexer_test {
         });
 
         println!("{:?}", unknown_tokens);
-        assert!(!unknown_tokens.is_empty());
+        assert!(unknown_tokens.is_empty());
         assert_eq!(circ_check, 0);
+    }
+
+    #[test]
+    fn unofficial_destruct_pattern() {
+        let result = execute(r#"
+        # test
+        Ca = "p" | "b" | "f" | "v" | "m" | "t" | "d" | "s" | "z" | "n"
+        Cb = "p" | "b" | "f" | "v" | "m" | "k" | "g" | "h"
+        C = Ca | Cb
+        Vi = "a" | "e" | "i"
+        Vu = "a" | "o" | "u"
+        V = Vi | Vu
+
+        X : Vx <- V = C Vx C Vx;
+        Y : Vx <- V, Cx <- C = Vx Cx Vx Cx | Cx Vx Cx Vx Cx;
+        % V | V C | C V | C V C | X;
+        "#);
+
+        println!("{:?}", result);
+        
+        let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
+            match x {
+                TokenType::Unknown(_) => true,
+                _ => false
+            }
+        }).collect();
+
+        println!("{:?}", unknown_tokens);
+        assert!(unknown_tokens.is_empty());
     }
 }

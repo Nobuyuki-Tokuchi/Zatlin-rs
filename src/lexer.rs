@@ -1,7 +1,9 @@
+use std::fmt::Display;
+
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum TokenType {
+pub(crate) enum TokenType {
     Unknown(String),
     Minus,
     Or,
@@ -15,6 +17,25 @@ pub enum TokenType {
     NewLine,
 }
 
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Self::Unknown(token) => write!(f, "{}", token),
+            Self::Minus => write!(f, "-"),
+            Self::Or => write!(f, "|"),
+            Self::Equal => write!(f, "="),
+            Self::Circumflex => write!(f, "^"),
+            Self::Percent => write!(f, "%"),
+            Self::Semicolon => write!(f, ";"),
+            Self::Value(token) => write!(f, "\"{}\"", token),
+            Self::Count(token) => write!(f, "{}", token),
+            Self::Variable(token) => write!(f, "{}", token),
+            Self::NewLine => write!(f, "(NewLine)"),
+        }
+    }
+}
+
+
 #[derive(PartialEq, Copy, Clone)]
 enum TokenizeMode {
     Normal,
@@ -22,7 +43,7 @@ enum TokenizeMode {
     Comment,
 }
 
-pub fn lexer(text: &str) -> Vec<TokenType> {
+pub(crate) fn lexer(text: &str) -> Vec<TokenType> {
     let text = text.chars();
 
     let mut tokens: Vec<TokenType> = vec![];
@@ -155,12 +176,12 @@ mod lexer_test {
         let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
             match x {
                 TokenType::Unknown(_) => true,
-                _ => true
+                _ => false
             }
         }).collect();
 
         println!("{:?}", unknown_tokens);
-        assert!(!unknown_tokens.is_empty());
+        assert!(unknown_tokens.is_empty());
     }
 
     #[test]
@@ -189,11 +210,11 @@ mod lexer_test {
         let unknown_tokens: Vec<(usize, &TokenType)> = result.iter().enumerate().filter(|(_, x)| {
             match x {
                 TokenType::Unknown(_) => true,
-                _ => true
+                _ => false
             }
         }).collect();
 
         println!("{:?}", unknown_tokens);
-        assert!(!unknown_tokens.is_empty());
+        assert!(unknown_tokens.is_empty());
     }
 }

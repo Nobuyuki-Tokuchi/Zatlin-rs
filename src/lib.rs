@@ -1,9 +1,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
+use error::ErrorValue;
+use parser::DefineStruct;
 use rand::prelude::*;
 
 mod lexer;
 mod parser;
+mod error;
 use crate::lexer::{lexer};
 use crate::parser::*;
 
@@ -20,7 +24,7 @@ impl Zatlin {
         }
     }
 
-    pub fn generate(&self) -> Result<String, String> {
+    pub fn generate(&self) -> Result<String, ErrorValue> {
         if self.operators.borrow().is_empty() {
             let tokens = lexer(&self.text);
             *self.operators.borrow_mut() = parse(&tokens)?;
@@ -29,28 +33,46 @@ impl Zatlin {
         execute(&self.operators)
     }
 
-    pub fn generate_with(&self, count: i64) -> Result<Vec<String>, String> {
+    pub fn generate_with(&self, count: i64) -> Result<Vec<String>, ErrorValue> {
         (0..count).map(|_| self.generate()).collect()
     }
 }
 
-fn execute(operators: &RefCell<Vec<Statement>>) -> Result<String, String> {
+#[derive(Debug, Clone)]
+struct VariableData {
+    pub expression: Rc<Expression>,
+}
+
+impl VariableData {
+    pub fn new(expression: &Rc<Expression>) -> Self {
+        Self {
+            expression: Rc::clone(&expression),
+        }
+    }
+}
+
+fn execute(operators: &RefCell<Vec<Statement>>) -> Result<String, ErrorValue> {
     let operators = operators.borrow();
-    let mut variables: HashMap<String, &Expression> = HashMap::new();
+    let mut variables: HashMap<String, VariableData> = HashMap::new();
     let mut random = rand::thread_rng();
 
     for operator in operators.iter() {
         match operator {
-            Statement::Define(key, expr) => variables.insert(key.to_string(), &expr),
-            Statement::Generate(expr) => return execute_expression(&expr, &variables, &mut random),
+            Statement::Define(DefineStruct { name: key, expr }) => {
+                let data = VariableData::new(&expr);
+                variables.insert(key.to_string(), data);
+            },
+            Statement::Generate(expr) => {
+                return execute_expression(&VariableData::new(&expr), &variables, &mut random)
+            },
         };
     }
 
     Ok(String::default())
 }
 
-fn execute_expression(expr: &Expression, variables: &HashMap<String, &Expression>, random: &mut ThreadRng) -> Result<String, String> {
-    let max: usize = expr.patterns.iter().map(|x| x.count).sum();
+fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
+    let max: usize = data.expression.patterns.iter().map(|x| x.count).sum();
 
     let result = loop {
         let mut rng = random.clone();
@@ -58,7 +80,7 @@ fn execute_expression(expr: &Expression, variables: &HashMap<String, &Expression
     
         let mut sum: usize = 0;
         let mut pattern: Option<&Pattern> = None;
-        for item in expr.patterns.iter() {
+        for item in data.expression.patterns.iter() {
             sum = sum + item.count;
             if value < sum {
                 pattern = Some(item);
@@ -68,21 +90,21 @@ fn execute_expression(expr: &Expression, variables: &HashMap<String, &Expression
     
         let pattern = match pattern {
             Some(v) => v,
-            None => return Err(String::from("Not found patterns")),
+            None => return Err(ErrorValue::NotFoundPattern),
         };
         let mut rng = rng;
         let result = execute_pattern(&pattern, &variables, &mut rng)?;
 
-        if !contains_excludes(&expr.excludes, &result) {
+        if !contains_excludes(&data.expression.excludes, &result) {
             break result;
         }
     };
     Ok(result)
 }
 
-fn contains_excludes(excludes: &Vec<ExcludePattern>, result: &str) -> bool {
+fn contains_excludes(excludes: &Vec<Pattern>, result: &str) -> bool {
     excludes.iter().any(|x| {
-        let check = x.values.iter().fold(String::default(), |acc, x| acc + &x.value);
+        let check = x.values.iter().fold(String::default(), |acc, x| acc + match x { Value::Literal(s) => s, _ => "" });
         match x.mode {
             ExtractMode::None => result.contains(&check),
             ExtractMode::Forward => result.starts_with(&check),
@@ -92,7 +114,7 @@ fn contains_excludes(excludes: &Vec<ExcludePattern>, result: &str) -> bool {
     })
 }
 
-fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, &Expression>, random: &mut ThreadRng) -> Result<String, String> {
+fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
     let mut result = String::default();
     let mut random = random;
 
@@ -104,22 +126,25 @@ fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, &Expression>, 
     Ok(result)
 }
 
-fn execute_value(value: &Value, variables: &HashMap<String, &Expression>, random: &mut ThreadRng) -> Result<String, String> {
-    if value.is_variable {
-        if let Some(expr) = variables.get(&value.value) {
-            let mut random = random;
-            execute_expression(expr, &variables, &mut random)
-        } else {
-            Err(format!("Not found variable: {}", value.value))
-        }
-    } else {
-        Ok(value.value.clone())
+fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
+    match value {
+        Value::Variable(key) => {
+            if let Some(data) = variables.get(key) {
+                let mut random = random;
+                execute_expression(&data, &variables, &mut random)
+            } else {
+                Err(ErrorValue::NotFoundVariable(key.to_owned()))
+            }
+        },
+        Value::Literal(val) => Ok(val.to_owned()),
     }
 }
 
 #[cfg(test)]
 mod generate_test {
-    fn execute(s: &str) -> Result<Vec<String>, String> {
+    use crate::error::ErrorValue;
+
+    fn execute(s: &str) -> Result<Vec<String>, ErrorValue> {
         let zatlin = crate::Zatlin::new(s);
         zatlin.generate_with(32)
     }
@@ -127,6 +152,7 @@ mod generate_test {
     #[test]
     fn default() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
 
@@ -158,6 +184,7 @@ mod generate_test {
     #[test]
     fn use_semicolon() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 
@@ -206,6 +233,6 @@ mod generate_test {
             },
         }
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err(), String::from("Not found variable: X"))
+        assert_eq!(result.unwrap_err(), ErrorValue::NotFoundVariable(String::from("X")))
     }
 }

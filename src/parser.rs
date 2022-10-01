@@ -1,62 +1,68 @@
 
-
-use crate::lexer::{TokenType};
+use std::rc::Rc;
+use crate::lexer::TokenType;
+use crate::error::ErrorValue;
 
 #[derive(Debug, Clone)]
-pub enum Statement {
-    Define(String, Expression),
-    Generate(Expression)
+pub(crate) enum Statement {
+    Define(DefineStruct),
+    Generate(Rc<Expression>)
 }
 
 #[derive(Debug, Clone)]
-pub struct Expression {
+pub(crate) struct DefineStruct {
+    pub name: String,
+    pub expr: Rc<Expression>
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Expression {
     pub patterns: Vec<Pattern>,
-    pub excludes: Vec<ExcludePattern>,
+    pub excludes: Vec<Pattern>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Pattern {
+pub(crate) struct Pattern {
     pub values: Vec<Value>,
     pub count: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct ExcludePattern {
-    pub values: Vec<Value>,
     pub mode: ExtractMode,
 }
 
 #[derive(Debug, Clone)]
-pub enum ExtractMode {
+pub(crate) enum ExtractMode {
     None,
     Forward,
     Backward,
     Exact,
 }
 
+impl Pattern {
+    fn new(values: Vec<Value>, count: usize) -> Self {
+        Self { values, count, mode: ExtractMode::None }
+    }
+
+    fn exclude_new(values: Vec<Value>, mode: ExtractMode) -> Self {
+        Self { values, count: 0, mode }
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct Value {
-    pub value: String,
-    pub is_variable: bool,
+pub(crate) enum Value {
+    Literal(String),
+    Variable(String),
 }
 
 impl Value {
-    fn literal(value: &str) -> Self {
-        Value {
-            value: String::from(value),
-            is_variable: false,
-        }
-    }
-
-    fn variable(value: &str) -> Self {
-        Value {
-            value: String::from(value),
-            is_variable: true,
+    pub fn is_variable(&self) -> bool {
+        if let &Self::Variable(_) = self {
+            true
+        } else {
+            false
         }
     }
 }
 
-pub fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, String> {
+pub(crate) fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, ErrorValue> {
     let mut statements = vec![];
     
     let mut index = 0;
@@ -75,17 +81,17 @@ pub fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, String> {
                     index = next_index;
                 },
                 TokenType::Unknown(value) => {
-                    return Err(format!("Unknown token: {}, index: {}", value, index))
+                    return Err(ErrorValue::UnknownToken(value.clone(), index))
                 },
                 TokenType::NewLine => {
                     index = index + 1
                 }
                 _ => {
-                    return Err(format!("Invalid token: {:?}, index: {}", value, index))
+                    return Err(ErrorValue::InvalidToken(String::from("statement"), value.to_string(), index))
                 }
             }
         } else {
-            return Err(format!("End of token in statement. length: {}, index: {}", length, index))
+            return Err(ErrorValue::ErrorMessage(format!("End of token in statement. length: {}, index: {}", length, index), None))
         }
     }
     
@@ -93,49 +99,45 @@ pub fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, String> {
 }
 
 
-fn parse_define(value: &str, tokens: &[TokenType], index: usize) -> Result<(Statement, usize), String> {
-    let next_index = if let Some(next) = tokens.get(index) {
-        if &TokenType::Equal == next {
-            index + 1
-        } else {
-            return Err(format!("Invalid token in define variable: {:?}, index: {}", value, index))
+fn parse_define(value: &str, tokens: &[TokenType], index: usize) -> Result<(Statement, usize), ErrorValue> {
+    let next_index = index;
+    let next_index = if let Some(next) = tokens.get(next_index) {
+        match next {
+            &TokenType::Equal => next_index + 1,
+            _ => return Err(ErrorValue::InvalidToken(String::from("define variable"), next.to_string(), index))
         }
     } else {
-        return Err(format!("End of token in define variable. index: {}", index))
+        return Err(ErrorValue::EndOfToken(String::from("define variable"), index))
     };
 
     let (expr, next_index) = parse_expression(&tokens, next_index)?;
 
-    let next_index = if let Some(value) = tokens.get(next_index) {
-        if &TokenType::Semicolon == value || &TokenType::NewLine == value {
-            next_index + 1
+    if let Some(token) = tokens.get(next_index) {
+        if &TokenType::Semicolon == token || &TokenType::NewLine == token {
+            Ok((Statement::Define(DefineStruct { name: String::from(value), expr: Rc::new(expr) }), next_index + 1))
         } else {
-            return Err(format!("Invalid token in define variable: {:?}, index: {}", value, index))
+            Err(ErrorValue::InvalidToken(String::from("expression of define variable"), token.to_string(), index))
         }
     } else {
-        return Err(format!("End of token in define variable. index: {}", next_index))
-    };
-
-    Ok((Statement::Define(value.to_string(), expr), next_index))
+        Err(ErrorValue::EndOfToken(String::from("expression of define variable"), index))
+    }
 }
 
-fn parse_generate(tokens: &[TokenType], index: usize) -> Result<(Statement, usize), String> {
+fn parse_generate(tokens: &[TokenType], index: usize) -> Result<(Statement, usize), ErrorValue> {
     let (expr, next_index) = parse_expression(&tokens, index)?;
 
-    let next_index = if let Some(value) = tokens.get(next_index) {
-        if &TokenType::Semicolon == value {
-            next_index + 1
+    if let Some(token) = tokens.get(next_index) {
+        if &TokenType::Semicolon == token {
+            Ok((Statement::Generate(Rc::new(expr)), next_index + 1))
         } else {
-            return Err(format!("Invalid token in generate: {:?}, index: {}", value, index))
+            Err(ErrorValue::InvalidToken(String::from("generate"), token.to_string(), next_index))
         }
     } else {
-        return Err(format!("End of token in generate. index: {}", next_index))
-    };
-
-    Ok((Statement::Generate(expr), next_index))
+        Err(ErrorValue::EndOfToken(String::from("generate"), next_index))
+    }
 }
 
-fn parse_expression(tokens: &[TokenType], index: usize) -> Result<(Expression, usize), String> {
+fn parse_expression(tokens: &[TokenType], index: usize) -> Result<(Expression, usize), ErrorValue> {
     let (patterns, next_index) = parse_patterns(&tokens, index)?;
 
     let (excludes, next_index) = if let Some(TokenType::Minus) = tokens.get(next_index) {
@@ -143,11 +145,31 @@ fn parse_expression(tokens: &[TokenType], index: usize) -> Result<(Expression, u
     } else {
         (Vec::new(), next_index)
     };
+    let excludes = expand_exclude_inner_pattern(excludes);
 
-    Ok((Expression { patterns: patterns, excludes: excludes }, next_index))
+    Ok((Expression { patterns, excludes }, next_index))
 }
 
-fn parse_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, usize), String> {
+fn expand_exclude_inner_pattern(patterns: Vec<Pattern>) -> Vec<Pattern> {
+    let mut result_list: Vec<Pattern> = vec![];
+
+    for pattern in patterns.into_iter() {
+        let mut value_list: Vec<String> = vec![String::new()];
+        for value in pattern.values.into_iter() {
+            match value {
+                Value::Literal(literal) => {
+                    value_list = value_list.into_iter().map(|x| x + &literal).collect();
+                },
+                Value::Variable(_) => { },
+            }
+        }
+        result_list.push(Pattern::exclude_new(value_list.into_iter().map(|x| Value::Literal(x)).collect(), pattern.mode))
+    }
+
+    result_list
+}
+
+fn parse_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, usize), ErrorValue> {
     let (pattern, mut next_index) = parse_pattern(&tokens, index)?;
     let mut patterns = vec![pattern];
 
@@ -159,21 +181,21 @@ fn parse_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, u
                 break;
             }
         } else {
-            return Err(format!("End of token in patterns. index: {}", next_index))
+            return Err(ErrorValue::EndOfToken(String::from("patterns"), next_index))
         };
 
         if let Ok((pattern, index)) = parse_pattern(&tokens, next_index) {
             patterns.push(pattern);
             next_index = index;
         } else {
-            return Err(format!("Next pattern is nothing in patterns. index: {}", next_index))
+            return Err(ErrorValue::ErrorMessage(String::from("Next pattern is nothing in patterns"), Some(next_index)))
         }
     }
 
     Ok((patterns, next_index))
 }
 
-fn parse_pattern(tokens: &[TokenType], index: usize) -> Result<(Pattern, usize), String> {
+fn parse_pattern(tokens: &[TokenType], index: usize) -> Result<(Pattern, usize), ErrorValue> {
     let (values, next_index) = parse_values(&tokens, index)?;
     let (count, next_index) = match tokens.get(next_index) {
         Some(value) => {
@@ -184,14 +206,42 @@ fn parse_pattern(tokens: &[TokenType], index: usize) -> Result<(Pattern, usize),
             }
         },
         None => {
-            return Err(format!("End of token in pattern. index: {}", index))
+            return Err(ErrorValue::EndOfToken(String::from("pattern"), index))
         }
     };
 
-    Ok((Pattern { values: values, count: count }, next_index))
+    Ok((Pattern::new(values, count), next_index))
 }
 
-fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<ExcludePattern>, usize), String> {
+fn parse_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize), ErrorValue> {
+    let (value, mut next_index) = parse_value(&tokens, index)?;
+    let mut values = vec![value];
+
+    loop {
+        if let Ok((value, index)) = parse_value(&tokens, next_index) {
+            values.push(value);
+            next_index = index;
+        } else {
+            break;
+        }
+    }
+
+    Ok((values, next_index))
+}
+
+fn parse_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), ErrorValue> {
+    if let Some(token) = tokens.get(index) {
+        match token {
+            TokenType::Value(value) => Ok((Value::Literal(value.clone()), index + 1)),
+            TokenType::Variable(value) => Ok((Value::Variable(value.clone()), index + 1)),
+            _ => Err(ErrorValue::InvalidToken(String::from("value"), token.to_string(), index)),
+        }
+    } else {
+            Err(ErrorValue::EndOfToken(String::from("value"), index))
+    }
+}
+
+fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Pattern>, usize), ErrorValue> {
     let (pattern, mut next_index) = parse_exclude_pattern(&tokens, index)?;
     let mut patterns = vec![pattern];
 
@@ -203,7 +253,7 @@ fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Exc
                 break;
             }
         } else {
-            return Err(format!("End of token in exclude patterns. index: {}", next_index))
+            return Err(ErrorValue::EndOfToken(String::from("exclude patterns"), next_index))
         }
 
         if let Ok((pattern, index)) = parse_exclude_pattern(&tokens, next_index) {
@@ -217,19 +267,19 @@ fn parse_exclude_patterns(tokens: &[TokenType], index: usize) -> Result<(Vec<Exc
     Ok((patterns, next_index))
 }
 
-fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(ExcludePattern, usize), String> {
+fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(Pattern, usize), ErrorValue> {
     let (is_prefix, next_index) = if let Some(token) = tokens.get(index) {
         match token {
             TokenType::Circumflex => (true, index + 1),
             _ => (false, index),
         }
     } else {
-        return Err(format!("End of token in exclude pattern (prefix). index: {}", index))
+        return Err(ErrorValue::EndOfToken(String::from("exclude pattern (prefix)"), index))
     };
     
-    let (values, next_index) = parse_values(&tokens, next_index)?;
-    if values.iter().any(|x| x.is_variable) {
-        return Err(String::from("Exclude Pattern can't include variable."))
+    let (values, next_index) = parse_exclude_values(&tokens, next_index)?;
+    if values.iter().any(|x| x.is_variable()) {
+        return Err(ErrorValue::ExcludeIncludeVariable)
     }
     
     let (is_postfix, next_index) = if let Some(token) = tokens.get(next_index) {
@@ -248,15 +298,15 @@ fn parse_exclude_pattern(tokens: &[TokenType], index: usize) -> Result<(ExcludeP
         (true, true) => ExtractMode::Exact,
     };
 
-    Ok((ExcludePattern { values: values, mode: mode }, next_index))
+    Ok((Pattern::exclude_new(values, mode), next_index))
 }
 
-fn parse_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize), String> {
-    let (value, mut next_index) = parse_value(&tokens, index)?;
+fn parse_exclude_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize), ErrorValue> {
+    let (value, mut next_index) = parse_exclude_value(&tokens, index)?;
     let mut values = vec![value];
 
     loop {
-        if let Ok((value, index)) = parse_value(&tokens, next_index) {
+        if let Ok((value, index)) = parse_exclude_value(&tokens, next_index) {
             values.push(value);
             next_index = index;
         } else {
@@ -267,24 +317,24 @@ fn parse_values(tokens: &[TokenType], index: usize) -> Result<(Vec<Value>, usize
     Ok((values, next_index))
 }
 
-fn parse_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), String> {
+fn parse_exclude_value(tokens: &[TokenType], index: usize) -> Result<(Value, usize), ErrorValue> {
     if let Some(token) = tokens.get(index) {
         match token {
-            TokenType::Value(value) => Ok((Value::literal(&value), index + 1)),
-            TokenType::Variable(value) => Ok((Value::variable(&value), index + 1)),
-            _ => Err(format!("Invalid token in value: {:?}, index: {}", token, index)),
+            TokenType::Value(value) => Ok((Value::Literal(value.clone()), index + 1)),
+            _ => Err(ErrorValue::InvalidToken(String::from("exclude value"), token.to_string(), index)),
         }
     } else {
-        Err(format!("End of token in value. index: {}", index))
+        Err(ErrorValue::EndOfToken(String::from("exclude value"), index))
     }
 }
 
-
 #[cfg(test)]
 mod parse_test {
-    use super::Statement;
+    use crate::{parser::DefineStruct, lexer::TokenType};
 
-    fn execute(s: &str) -> Result<Vec<Statement>, String> {
+    use super::{Statement, ErrorValue};
+
+    fn execute(s: &str) -> Result<Vec<Statement>, ErrorValue> {
         let tokens = crate::lexer::lexer(s);
         crate::parser::parse(&tokens)
     }
@@ -292,6 +342,7 @@ mod parse_test {
     #[test]
     fn default() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
 
@@ -316,6 +367,7 @@ mod parse_test {
     #[test]
     fn use_semicolon() {
         let result = execute(r#"
+        # metapi
         Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
         Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
 
@@ -350,6 +402,39 @@ mod parse_test {
     }
 
     #[test]
+    fn expand_exclude_check() {
+        let result = execute(r#"
+        C = "p" | "f" | "t" | "s" | "k" | "h";
+        V = "a" | "i" | "u";
+
+        % C V | C V C | V C | V C V | C C V C | C V C C - "h" "u" | "a" "h" ^ | "i" "h" ^ | "u" "h" ^ | "f" "h" | "s" "h";
+        "#);
+
+        println!("{:?}", result);
+        assert!(result.is_ok());
+
+        let excludes_check: bool = result.unwrap().iter().fold(true, |acc, x| {
+            acc && match x {
+                Statement::Define(DefineStruct { name: _, expr }) => {
+                    if expr.excludes.is_empty() {
+                        true
+                    } else {
+                        expr.excludes.iter().any(|x| x.values.len() == 1)
+                    }
+                },
+                Statement::Generate(expr) => {
+                    if expr.excludes.is_empty() {
+                        true
+                    } else {
+                        expr.excludes.iter().any(|x| x.values.len() == 1)
+                    }
+                }
+            }
+        });
+        assert!(excludes_check);
+    }
+
+    #[test]
     fn nothing_semicolon() {
         let result = execute(r#"
         C = "p" | "f" | "t" | "s" | "k" | "h"
@@ -362,7 +447,11 @@ mod parse_test {
 
         println!("{:?}", result);
         assert!(result.is_err());
-        assert!(result.unwrap_err().starts_with("Invalid token in generate: NewLine"))
+        assert!(if let ErrorValue::InvalidToken(point, token, _) = result.unwrap_err() {
+             point == "generate" && token == TokenType::NewLine.to_string()
+        } else {
+            false
+        })
     }
 
     #[test]
@@ -377,6 +466,10 @@ mod parse_test {
 
         println!("{:?}", result);
         assert!(result.is_err());
-        assert!(result.unwrap_err().starts_with("Next pattern is nothing in patterns."))
+        assert!(match result {
+            Err(ErrorValue::ErrorMessage(message, _)) => message.starts_with("Next pattern is nothing in patterns"),
+            Err(_) => false,
+            Ok(_) => false,
+        })
     }
 }

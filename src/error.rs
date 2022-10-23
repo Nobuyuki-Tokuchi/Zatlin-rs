@@ -9,6 +9,7 @@ pub enum ErrorValue {
     ExcludeIncludeVariable,
     NotFoundPattern,
     NotFoundVariable(String),
+    OverRetryCount,
     ErrorMessage(String, Option<usize>),
 }
 
@@ -21,6 +22,7 @@ impl Display for ErrorValue {
             Self::ExcludeIncludeVariable => write!(f, "Exclude Pattern can't include variable."),
             Self::NotFoundPattern => write!(f, "Not found patterns."),
             Self::NotFoundVariable(key) => write!(f, "Not found variable: {}", key),
+            Self::OverRetryCount => write!(f, "Retry count is over limit."),
             ErrorValue::ErrorMessage(message, index) => {
                 match index {
                     Some(index) => write!(f, "{}: index: {}", message, index),

@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) enum TokenType {
+pub enum TokenType {
     Unknown(String),
     Minus,
     Or,
@@ -43,7 +43,7 @@ enum TokenizeMode {
     Comment,
 }
 
-pub(crate) fn lexer(text: &str) -> Vec<TokenType> {
+pub fn lexer(text: &str) -> Vec<TokenType> {
     let text = text.chars();
 
     let mut tokens: Vec<TokenType> = vec![];

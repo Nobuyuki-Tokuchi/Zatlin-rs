@@ -1,15 +1,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
-use error::ErrorValue;
-use parser::DefineStruct;
 use rand::prelude::*;
 
-mod lexer;
-mod parser;
-mod error;
-use crate::lexer::lexer;
-use crate::parser::*;
-
+use zatlin_internal::{parser::*, ZatlinData};
+pub use zatlin_internal::error::ErrorValue;
 
 pub struct Zatlin {
     retry_count: u32,
@@ -49,26 +43,35 @@ impl Zatlin {
     }
 
     pub fn generate(&self, text: &str) -> Result<String, ErrorValue> {
-        let tokens = lexer(&text);
-        let statements = parse(&tokens)?;
-        execute(&statements, self.retry_count)
+        let data = ZatlinData::new_str(text)?;
+        execute(data.get_statements_ref(), self.retry_count)
+    }
+
+    pub fn generate_by(&self, data: &ZatlinData) -> Result<String, ErrorValue> {
+        execute(data.get_statements_ref(), self.retry_count)
     }
 
     pub fn generate_many(&self, text: &str, count: u32) -> Vec<Result<String, ErrorValue>> {
-        let tokens = lexer(&text);
-        let statements = match parse(&tokens) {
-            Ok(statements ) => statements,
-            Err(error) => return vec![Err(error)],
+        let data = match ZatlinData::new_str(text) {
+            Ok(data) => data,
+            Err(error) => return vec![Err(error)]
         };
+        self.generate_many_by(&data, count)
+    }
 
+    pub fn generate_many_by(&self, data: &ZatlinData, count: u32) -> Vec<Result<String, ErrorValue>> {
         let mut result = vec![];
         let mut i = 0;
         while i < count {
-            result.push(execute(&statements, self.retry_count));
+            result.push(execute(data.get_statements_ref(), self.retry_count));
             i += 1;
         }
 
         result
+    }
+
+    pub fn create_data(text: &str) -> Result<ZatlinData, ErrorValue> {
+        ZatlinData::new_str(text)
     }
 }
 
@@ -82,7 +85,7 @@ impl VariableData {
     pub fn new(expression: &Rc<Expression>, retry_count: u32) -> Self {
         Self {
             expression: Rc::clone(&expression),
-            retry_count: retry_count,
+            retry_count,
         }
     }
 }
@@ -183,11 +186,14 @@ fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, rando
 
 #[cfg(test)]
 mod generate_test {
-    use crate::error::ErrorValue;
+    use zatlin_internal::error::ErrorValue;
 
     fn execute(s: &str) -> Vec<Result<String, ErrorValue>> {
         let zatlin = crate::Zatlin::default();
-        zatlin.generate_many(&s, 32)
+        match crate::Zatlin::create_data(s) {
+            Ok(data) => zatlin.generate_many_by(&data, 32),
+            Err(error) => vec![Err(error)],
+        }
     }
 
     #[test]

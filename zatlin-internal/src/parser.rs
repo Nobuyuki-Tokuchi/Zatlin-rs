@@ -4,33 +4,33 @@ use crate::lexer::TokenType;
 use crate::error::ErrorValue;
 
 #[derive(Debug, Clone)]
-pub(crate) enum Statement {
+pub enum Statement {
     Define(DefineStruct),
     Generate(Rc<Expression>)
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DefineStruct {
+pub struct DefineStruct {
     pub name: String,
     pub destruct_variables: Rc<HashMap<String, String>>,
     pub expr: Rc<Expression>
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Expression {
+pub struct Expression {
     pub patterns: Vec<Pattern>,
     pub excludes: Vec<Pattern>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Pattern {
+pub struct Pattern {
     pub values: Vec<Value>,
     pub count: usize,
     pub mode: ExtractMode,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ExtractMode {
+pub enum ExtractMode {
     None,
     Forward,
     Backward,
@@ -48,7 +48,7 @@ impl Pattern {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Value {
+pub enum Value {
     Literal(String),
     Variable(String),
     InnerPattern(Vec<Pattern>)
@@ -64,7 +64,7 @@ impl Value {
     }
 }
 
-pub(crate) fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, ErrorValue> {
+pub fn parse(tokens: &Vec<TokenType>) -> Result<Vec<Statement>, ErrorValue> {
     let mut statements = vec![];
     
     let mut index = 0;

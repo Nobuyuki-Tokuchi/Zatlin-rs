@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use rand::prelude::*;
 
-use zatlin_internal::{parser::*, ZatlinData};
-pub use zatlin_internal::error::ErrorValue;
+use zatlin_internal::parser::*;
+pub use zatlin_internal::{error::ErrorValue, ZatlinData};
+pub use zatlin_macro::zatlin;
 
 pub struct Zatlin {
     retry_count: u32,
@@ -43,7 +44,7 @@ impl Zatlin {
     }
 
     pub fn generate(&self, text: &str) -> Result<String, ErrorValue> {
-        let data = ZatlinData::new_str(text)?;
+        let data = ZatlinData::try_from(text)?;
         execute(data.get_statements_ref(), self.retry_count)
     }
 
@@ -52,7 +53,7 @@ impl Zatlin {
     }
 
     pub fn generate_many(&self, text: &str, count: u32) -> Vec<Result<String, ErrorValue>> {
-        let data = match ZatlinData::new_str(text) {
+        let data = match ZatlinData::try_from(text) {
             Ok(data) => data,
             Err(error) => return vec![Err(error)]
         };
@@ -71,7 +72,7 @@ impl Zatlin {
     }
 
     pub fn create_data(text: &str) -> Result<ZatlinData, ErrorValue> {
-        ZatlinData::new_str(text)
+        ZatlinData::try_from(text)
     }
 }
 
@@ -186,7 +187,9 @@ fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, rando
 
 #[cfg(test)]
 mod generate_test {
-    use zatlin_internal::error::ErrorValue;
+    use zatlin_internal::{error::ErrorValue, ZatlinData};
+    use zatlin_macro::zatlin;
+    use crate::Zatlin;
 
     fn execute(s: &str) -> Vec<Result<String, ErrorValue>> {
         let zatlin = crate::Zatlin::default();
@@ -227,6 +230,7 @@ mod generate_test {
                 },
             }
         }
+        println!("");
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
@@ -261,6 +265,7 @@ mod generate_test {
                 },
             }
         }
+        println!("");
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
@@ -291,5 +296,51 @@ mod generate_test {
 
         assert!(result.iter().all(|x| x.is_err()));
         assert!(result.iter().all(|x| if let Err(ErrorValue::OverRetryCount) = x { true } else { false }))
+    }
+
+    #[test]
+    fn macro_test() {
+        let data: Result<ZatlinData, ErrorValue> = zatlin!{
+            Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+            Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+            
+            Va = "a" | "á" | "à" | "ä";
+            Ve = "e" | "é" | "è" | "ë";
+            Vi = "i" | "í" | "ì" | "ï";
+            Vo = "o" | "ó" | "ò" | "ö";
+            Vu = "u" | "ú" | "ù" | "ü";
+            Vy = "y" | "ý" | "ỳ" | "ÿ";
+            
+            Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
+            Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i";
+            Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+            
+            % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ "y" | ^ "ý" | ^ "ỳ" | ^ "ÿ" | ^ "wu" | ^ "wú" | ^ "wù" | ^ "wü" | ^ "hy" | ^ "hý" | ^ "hỳ" | ^ "hÿ" | ^ "qy" | ^ "qý" | ^ "qỳ" | ^ "qÿ" | ^ "ry" | ^ "rý" | ^ "rỳ" | ^ "rÿ" | ^ "ny" | ^ "ný" | ^ "nỳ" | ^ "nÿ" | ^ "my" | ^ "mý" | ^ "mỳ" | ^ "mÿ";
+        };
+
+        let data = match data {
+            Ok(result) => result,
+            Err(error) => {
+                println!("{}", error);
+                assert!(false);
+                return;
+            }
+        };
+
+        let generator = Zatlin::default();
+        let result = generator.generate_many_by(&data, 10);
+        
+        for item in result.iter() {
+            match item {
+                Ok(value) => {
+                    print!("{} ", value);
+                },
+                Err(message) => {
+                    print!("({}) ", message);
+                },
+            }
+        }
+        println!("");
+        assert!(result.iter().all(|x| x.is_ok()));
     }
 }

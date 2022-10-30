@@ -3,7 +3,7 @@ pub mod parser;
 pub mod error;
 
 use error::ErrorValue;
-use lexer::lexer;
+use lexer::{lexer, lexer_by_vec};
 use parser::{parse, Statement};
 
 #[derive(Debug, Clone)]
@@ -12,18 +12,29 @@ pub struct ZatlinData {
 } 
 
 impl ZatlinData {
-    pub fn new(statements: Vec<Statement>) -> Self {
-        Self { statements }
+    pub fn get_statements_ref(&self) -> &Vec<Statement> {
+        self.statements.as_ref()
     }
+}
 
-    pub fn new_str(text: &str) -> Result<Self, ErrorValue> {
-        let tokens = lexer(text);
+impl TryFrom<Vec<&str>> for ZatlinData {
+    type Error = ErrorValue;
+
+    fn try_from(value: Vec<&str>) -> Result<Self, Self::Error> {
+        let tokens = lexer_by_vec(value);
         parse(&tokens).map(|x| Self {
             statements: x
         })
     }
+}
 
-    pub fn get_statements_ref(&self) -> &Vec<Statement> {
-        self.statements.as_ref()
+impl TryFrom<&str> for ZatlinData {
+    type Error = ErrorValue;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        let tokens = lexer(value);
+        parse(&tokens).map(|x| Self {
+            statements: x
+        })
     }
 }

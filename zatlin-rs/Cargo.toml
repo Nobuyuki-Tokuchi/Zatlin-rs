@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8"
-zatlin-internal = { version = "0.1", path = "../zatlin-internal" }
+zatlin-internal = { path = "../zatlin-internal" }
+zatlin-macro = { path = "../zatlin-macro" }

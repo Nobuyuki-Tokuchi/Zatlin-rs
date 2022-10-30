@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use rand::prelude::*;
 
-use zatlin_internal::{parser::*, ZatlinData};
-pub use zatlin_internal::error::ErrorValue;
+use zatlin_internal::parser::*;
+pub use zatlin_internal::{error::ErrorValue, ZatlinData};
+pub use zatlin_macro::zatlin;
 
 pub struct Zatlin {
     retry_count: u32,
@@ -43,7 +44,7 @@ impl Zatlin {
     }
 
     pub fn generate(&self, text: &str) -> Result<String, ErrorValue> {
-        let data = ZatlinData::new_str(text)?;
+        let data = ZatlinData::try_from(text)?;
         execute(data.get_statements_ref(), self.retry_count)
     }
 
@@ -52,7 +53,7 @@ impl Zatlin {
     }
 
     pub fn generate_many(&self, text: &str, count: u32) -> Vec<Result<String, ErrorValue>> {
-        let data = match ZatlinData::new_str(text) {
+        let data = match ZatlinData::try_from(text) {
             Ok(data) => data,
             Err(error) => return vec![Err(error)]
         };
@@ -71,7 +72,7 @@ impl Zatlin {
     }
 
     pub fn create_data(text: &str) -> Result<ZatlinData, ErrorValue> {
-        ZatlinData::new_str(text)
+        ZatlinData::try_from(text)
     }
 }
 
@@ -241,7 +242,9 @@ fn append_destruct_variables(data: &VariableData, global: &HashMap<String, Varia
 
 #[cfg(test)]
 mod generate_test {
-    use zatlin_internal::error::ErrorValue;
+    use zatlin_internal::{error::ErrorValue, ZatlinData};
+    use zatlin_macro::zatlin;
+    use crate::Zatlin;
 
     fn execute(s: &str) -> Vec<Result<String, ErrorValue>> {
         let zatlin = crate::Zatlin::default();
@@ -282,6 +285,7 @@ mod generate_test {
                 },
             }
         }
+        println!("");
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
@@ -316,6 +320,7 @@ mod generate_test {
                 },
             }
         }
+        println!("");
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
@@ -349,6 +354,52 @@ mod generate_test {
     }
 
     #[test]
+    fn macro_test() {
+        let data: Result<ZatlinData, ErrorValue> = zatlin!{
+            Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+            Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+            
+            Va = "a" | "á" | "à" | "ä";
+            Ve = "e" | "é" | "è" | "ë";
+            Vi = "i" | "í" | "ì" | "ï";
+            Vo = "o" | "ó" | "ò" | "ö";
+            Vu = "u" | "ú" | "ù" | "ü";
+            Vy = "y" | "ý" | "ỳ" | "ÿ";
+            
+            Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
+            Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i";
+            Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+            
+            % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ "y" | ^ "ý" | ^ "ỳ" | ^ "ÿ" | ^ "wu" | ^ "wú" | ^ "wù" | ^ "wü" | ^ "hy" | ^ "hý" | ^ "hỳ" | ^ "hÿ" | ^ "qy" | ^ "qý" | ^ "qỳ" | ^ "qÿ" | ^ "ry" | ^ "rý" | ^ "rỳ" | ^ "rÿ" | ^ "ny" | ^ "ný" | ^ "nỳ" | ^ "nÿ" | ^ "my" | ^ "mý" | ^ "mỳ" | ^ "mÿ";
+        };
+
+        let data = match data {
+            Ok(result) => result,
+            Err(error) => {
+                println!("{}", error);
+                assert!(false);
+                return;
+            }
+        };
+
+        let generator = Zatlin::default();
+        let result = generator.generate_many_by(&data, 10);
+        
+        for item in result.iter() {
+            match item {
+                Ok(value) => {
+                    print!("{} ", value);
+                },
+                Err(message) => {
+                    print!("({}) ", message);
+                },
+            }
+        }
+        println!("");
+        assert!(result.iter().all(|x| x.is_ok()));
+    }
+    
+    #[test]
     fn unofficial_circ() {
         let result = execute(r#"
         # metapi
@@ -378,6 +429,7 @@ mod generate_test {
                 },
             }
         }
+        println!("");
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
@@ -407,6 +459,93 @@ mod generate_test {
                 },
             }
         }
+        println!("");
+        assert!(result.iter().all(|x| x.is_ok()));
+    }
+
+    #[test]
+    fn unofficial_circ_macro() {
+        let data: Result<ZatlinData, ErrorValue> = zatlin!{
+            Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+            Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+            
+            Va = "a" | "á" | "à" | "ä";
+            Ve = "e" | "é" | "è" | "ë";
+            Vi = "i" | "í" | "ì" | "ï";
+            Vo = "o" | "ó" | "ò" | "ö";
+            Vu = "u" | "ú" | "ù" | "ü";
+            Vy = "y" | "ý" | "ỳ" | "ÿ";
+            
+            Vxi = (Va | Ve | Vo) "i" | Vi ( "a" | "e" );
+            Vxu = ( Va | Vo ) "u" | Vu ("e" | "i");
+            Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+            % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ ("" | "w" | "h" | "q" | "r" | "n" | "m") ("y" | "ý" | "ỳ" | "ÿ");
+        };
+
+        let data = match data {
+            Ok(result) => result,
+            Err(error) => {
+                println!("{}", error);
+                assert!(false);
+                return;
+            }
+        };
+
+        let generator = Zatlin::default();
+        let result = generator.generate_many_by(&data, 32);
+        
+        for item in result.iter() {
+            match item {
+                Ok(value) => {
+                    print!("{} ", value);
+                },
+                Err(message) => {
+                    print!("({}) ", message);
+                },
+            }
+        }
+        println!("");
+        assert!(result.iter().all(|x| x.is_ok()));
+    }
+
+    #[test]
+    fn unofficial_destruct_pattern_macro() {
+        let data: Result<ZatlinData, ErrorValue> = zatlin!{
+            Ca = "p" | "b" | "f" | "v" | "m" | "t" | "d" | "s" | "z" | "n";
+            Cb = "p" | "b" | "f" | "v" | "m" | "k" | "g" | "h";
+            C = Ca | Cb;
+            Vi = "a" | "e" | "i";
+            Vu = "a" | "o" | "u";
+            V = Vi | Vu;
+    
+            X : Vx <- V = C Vx C Vx;
+            Y : Vx <- V, Cx <- C = Vx Cx Vx Cx | Cx Vx Cx Vx Cx;
+            % V | V C | C V | C V C | X;
+        };
+
+        let data = match data {
+            Ok(result) => result,
+            Err(error) => {
+                println!("{}", error);
+                assert!(false);
+                return;
+            }
+        };
+
+        let generator = Zatlin::default();
+        let result = generator.generate_many_by(&data, 32);
+        
+        for item in result.iter() {
+            match item {
+                Ok(value) => {
+                    print!("{} ", value);
+                },
+                Err(message) => {
+                    print!("({}) ", message);
+                },
+            }
+        }
+        println!("");
         assert!(result.iter().all(|x| x.is_ok()));
     }
 }

@@ -1,7 +1,5 @@
 use std::fmt::Display;
 
-
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     Unknown(String),
@@ -44,7 +42,6 @@ impl Display for TokenType {
         }
     }
 }
-
 
 #[derive(PartialEq, Copy, Clone)]
 enum TokenizeMode {
@@ -128,6 +125,45 @@ pub fn lexer(text: &str) -> Vec<TokenType> {
                 },
                 _ => {
                     buffer.push(c);
+                }
+            }
+        }
+    }
+
+    tokens
+}
+
+pub fn lexer_by_vec(values: Vec<&str>) -> Vec<TokenType> {
+    let mut tokens: Vec<TokenType> = vec![];
+
+    for value in values {
+        match value {
+            "-" => tokens.push(TokenType::Minus),
+            "|" => tokens.push(TokenType::Or),
+            "%" => tokens.push(TokenType::Percent),
+            "^" => tokens.push(TokenType::Circumflex),
+            "=" => tokens.push(TokenType::Equal),
+            ";" => tokens.push(TokenType::Semicolon),
+            "(" => tokens.push(TokenType::LeftCirc),
+            ")" => tokens.push(TokenType::RightCirc),
+            ":" => tokens.push(TokenType::Colon),
+            "," => tokens.push(TokenType::Comma),
+            "<-" => tokens.push(TokenType::LeftArrow),
+            _ => {
+                if value.starts_with("\"") && value.ends_with("\"") {
+                    let len = value.len();
+                    let token = if len > 2 {
+                        TokenType::Value(value[1..(value.len() - 1)].to_string())
+                    } else if len == 2 {
+                        TokenType::Value("".to_string())
+                    } else {
+                        TokenType::Unknown(value.to_string())
+                    };
+                    tokens.push(token);
+                } else if let Ok(count) = value.parse() {
+                    tokens.push(TokenType::Count(count));
+                } else {
+                    tokens.push(TokenType::Variable(String::from(value)));
                 }
             }
         }

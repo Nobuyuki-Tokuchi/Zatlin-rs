@@ -4,6 +4,8 @@ use rand::prelude::*;
 
 use zatlin_internal::parser::*;
 pub use zatlin_internal::{error::ErrorValue, ZatlinData};
+
+#[cfg(feature="use_macro")]
 pub use zatlin_macro::zatlin;
 
 pub struct Zatlin {
@@ -187,13 +189,12 @@ fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, rando
 
 #[cfg(test)]
 mod generate_test {
-    use zatlin_internal::{error::ErrorValue, ZatlinData};
-    use zatlin_macro::zatlin;
+    use zatlin_internal::error::ErrorValue;
     use crate::Zatlin;
 
     fn execute(s: &str) -> Vec<Result<String, ErrorValue>> {
-        let zatlin = crate::Zatlin::default();
-        match crate::Zatlin::create_data(s) {
+        let zatlin = Zatlin::default();
+        match Zatlin::create_data(s) {
             Ok(data) => zatlin.generate_many_by(&data, 32),
             Err(error) => vec![Err(error)],
         }
@@ -298,6 +299,12 @@ mod generate_test {
         assert!(result.iter().all(|x| if let Err(ErrorValue::OverRetryCount) = x { true } else { false }))
     }
 
+    #[cfg(feature="use_macro")]
+    use zatlin_macro::zatlin;
+    #[cfg(feature="use_macro")]
+    use zatlin_internal::ZatlinData;
+
+    #[cfg(feature="use_macro")]
     #[test]
     fn macro_test() {
         let data: Result<ZatlinData, ErrorValue> = zatlin!{

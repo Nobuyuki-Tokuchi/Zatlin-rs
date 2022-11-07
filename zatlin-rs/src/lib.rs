@@ -470,6 +470,7 @@ mod generate_test {
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
+    #[cfg(feature="use_macro")]
     #[test]
     fn unofficial_circ_macro() {
         let data: Result<ZatlinData, ErrorValue> = zatlin!{
@@ -515,6 +516,7 @@ mod generate_test {
         assert!(result.iter().all(|x| x.is_ok()));
     }
 
+    #[cfg(feature="use_macro")]
     #[test]
     fn unofficial_destruct_pattern_macro() {
         let data: Result<ZatlinData, ErrorValue> = zatlin!{

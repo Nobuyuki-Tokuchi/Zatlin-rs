@@ -105,7 +105,6 @@ impl VariableData {
 
 fn execute(operators: &Vec<Statement>, retry_count: u32) -> Result<String, ErrorValue> {
     let mut variables: HashMap<String, VariableData> = HashMap::new();
-    let mut random = rand::thread_rng();
 
     for operator in operators.iter() {
         match operator {
@@ -114,7 +113,7 @@ fn execute(operators: &Vec<Statement>, retry_count: u32) -> Result<String, Error
                 variables.insert(key.to_string(), data);
             },
             Statement::Generate(expr) => {
-                return execute_expression(&VariableData::without_destruct(&expr, retry_count), &variables, &mut random)
+                return execute_expression(&VariableData::without_destruct(&expr, retry_count), &variables)
             },
         };
     }
@@ -122,8 +121,9 @@ fn execute(operators: &Vec<Statement>, retry_count: u32) -> Result<String, Error
     Ok(String::default())
 }
 
-fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
+fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableData>) -> Result<String, ErrorValue> {
     let max: usize = data.expression.patterns.iter().map(|x| x.count).sum();
+    let mut random = rand::thread_rng();
 
     let mut count: u32 = 0;
     loop {
@@ -131,8 +131,7 @@ fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableD
             break Err(ErrorValue::OverRetryCount);
         }
 
-        let mut rng = random.clone();
-        let value = rng.gen_range(0..max);
+        let value = random.gen_range(0..max);
     
         let mut sum: usize = 0;
         let mut pattern: Option<&Pattern> = None;
@@ -148,8 +147,7 @@ fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableD
             Some(v) => v,
             None => return Err(ErrorValue::NotFoundPattern),
         };
-        let mut rng = rng;
-        let result = execute_pattern(&pattern, &variables, &mut rng, data.retry_count)?;
+        let result = execute_pattern(&pattern, &variables, data.retry_count)?;
 
         if !contains_excludes(&data.expression.excludes, &result) {
             break Ok(result);
@@ -171,41 +169,40 @@ fn contains_excludes(excludes: &Vec<Pattern>, result: &str) -> bool {
     })
 }
 
-fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, VariableData>, random: &mut ThreadRng, retry_count: u32) -> Result<String, ErrorValue> {
+fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, VariableData>, retry_count: u32) -> Result<String, ErrorValue> {
     let mut result = String::default();
-    let mut random = random;
 
     for item in pattern.values.iter() {
-        let value = execute_value(&item, &variables, &mut random, retry_count)?;
+        let value = execute_value(&item, &variables, retry_count)?;
         result = result + &value;
     }
 
     Ok(result)
 }
 
-fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, random: &mut ThreadRng, retry_count: u32) -> Result<String, ErrorValue> {
+fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, retry_count: u32) -> Result<String, ErrorValue> {
     match value {
         Value::Variable(key) => {
             if let Some(data) = variables.get(key) {
-                let mut random = random;
-                let append_variables = append_destruct_variables(data, variables, &mut random)?;
-                execute_expression(&data, &append_variables, &mut random)
+                let append_variables = append_destruct_variables(data, variables)?;
+                execute_expression(&data, &append_variables)
             } else {
                 Err(ErrorValue::NotFoundVariable(key.to_owned()))
             }
         },
         Value::Literal(val) => Ok(val.to_owned()),
         Value::InnerPattern(patterns) => {
-            let mut random = random;
             let expr = Rc::new(Expression { patterns: patterns.to_owned(), excludes: Vec::new() });
             let data = VariableData::without_destruct( &expr, retry_count);
-            execute_expression(&data, &variables, &mut random)
+            execute_expression(&data, &variables)
         },
     }
 }
 
-fn append_destruct_variables(data: &VariableData, global: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<HashMap<String, VariableData>, ErrorValue> {
+fn append_destruct_variables(data: &VariableData, global: &HashMap<String, VariableData>) -> Result<HashMap<String, VariableData>, ErrorValue> {
     let mut variables: HashMap<String, VariableData> = HashMap::new();
+    let mut random = rand::thread_rng();
+
     for (k, v) in global.iter() {
         variables.insert(k.to_owned(), v.clone());
     }
@@ -216,8 +213,6 @@ fn append_destruct_variables(data: &VariableData, global: &HashMap<String, Varia
             None => return Err(ErrorValue::NotFoundVariable(v.to_owned())),
         };
         let max: usize = target.expression.patterns.iter().map(|x| x.count).sum();
-
-        let mut random = random.clone();
         let value = random.gen_range(0..max);
     
         let mut sum: usize = 0;

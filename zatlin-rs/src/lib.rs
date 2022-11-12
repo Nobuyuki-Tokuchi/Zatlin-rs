@@ -95,16 +95,15 @@ impl VariableData {
 
 fn execute(operators: &Vec<Statement>, retry_count: u32) -> Result<String, ErrorValue> {
     let mut variables: HashMap<String, VariableData> = HashMap::new();
-    let mut random = rand::thread_rng();
 
     for operator in operators.iter() {
         match operator {
             Statement::Define(DefineStruct { name: key, expr }) => {
-                let data = VariableData::new(&expr, retry_count);
+                let data = VariableData::new(expr, retry_count);
                 variables.insert(key.to_string(), data);
             },
             Statement::Generate(expr) => {
-                return execute_expression(&VariableData::new(&expr, retry_count), &variables, &mut random)
+                return execute_expression(&VariableData::new(expr, retry_count), &variables)
             },
         };
     }
@@ -112,8 +111,9 @@ fn execute(operators: &Vec<Statement>, retry_count: u32) -> Result<String, Error
     Ok(String::default())
 }
 
-fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
+fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableData>) -> Result<String, ErrorValue> {
     let max: usize = data.expression.patterns.iter().map(|x| x.count).sum();
+    let mut random = rand::thread_rng();
 
     let mut count: u32 = 0;
     loop {
@@ -121,8 +121,7 @@ fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableD
             break Err(ErrorValue::OverRetryCount);
         }
 
-        let mut rng = random.clone();
-        let value = rng.gen_range(0..max);
+        let value = random.gen_range(0..max);
     
         let mut sum: usize = 0;
         let mut pattern: Option<&Pattern> = None;
@@ -138,8 +137,7 @@ fn execute_expression(data: &VariableData, variables: &HashMap<String, VariableD
             Some(v) => v,
             None => return Err(ErrorValue::NotFoundPattern),
         };
-        let mut rng = rng;
-        let result = execute_pattern(&pattern, &variables, &mut rng)?;
+        let result = execute_pattern(&pattern, &variables)?;
 
         if !contains_excludes(&data.expression.excludes, &result) {
             break Ok(result);
@@ -161,24 +159,22 @@ fn contains_excludes(excludes: &Vec<Pattern>, result: &str) -> bool {
     })
 }
 
-fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
+fn execute_pattern(pattern: &Pattern, variables: &HashMap<String, VariableData>) -> Result<String, ErrorValue> {
     let mut result = String::default();
-    let mut random = random;
 
     for item in pattern.values.iter() {
-        let value = execute_value(&item, &variables, &mut random)?;
+        let value = execute_value(&item, &variables)?;
         result = result + &value;
     }
 
     Ok(result)
 }
 
-fn execute_value(value: &Value, variables: &HashMap<String, VariableData>, random: &mut ThreadRng) -> Result<String, ErrorValue> {
+fn execute_value(value: &Value, variables: &HashMap<String, VariableData>) -> Result<String, ErrorValue> {
     match value {
         Value::Variable(key) => {
             if let Some(data) = variables.get(key) {
-                let mut random = random;
-                execute_expression(&data, &variables, &mut random)
+                execute_expression(&data, &variables)
             } else {
                 Err(ErrorValue::NotFoundVariable(key.to_owned()))
             }

@@ -9,7 +9,9 @@ edition = "2021"
 rand = "0.8"
 zatlin-internal = { path = "../zatlin-internal" }
 zatlin-macro = { path = "../zatlin-macro", optional = true }
+getrandom = { version = "0.2", optional = true }
 
 [features]
 default = [ ]
 use_macro = [ "zatlin-macro" ]
+wasm = [ "getrandom/js" ]

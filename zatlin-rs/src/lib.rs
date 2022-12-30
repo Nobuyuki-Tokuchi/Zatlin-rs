@@ -41,8 +41,8 @@ impl Zatlin {
         };
     }
 
-    pub fn get_retry(&self) {
-        self.retry_count;
+    pub fn get_retry(&self) -> u32 {
+        self.retry_count
     }
 
     pub fn generate(&self, text: &str) -> Result<String, ErrorValue> {

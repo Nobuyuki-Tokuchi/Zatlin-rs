@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "zatlin-rs",
-    "zatlin-internal",
+    "zatlin",
     "zatlin-macro",
 ]

@@ -1,30 +1,32 @@
-# Zatlin-rs
+# Zatlin
 ## 概要
-これは[Zatlin](https://github.com/Ziphil/Zatlin)のRust移植版のライブラリです．
+これは[Zatlin](https://github.com/Ziphil/ZatlinTypescript)のRust移植版のライブラリです．
+現時点ではVer 1.1をある程度実装しております．
 
 ## 本家と異なる部分
 把握している限りの相違部分は以下のものとなります．
-* 式で作成された結果に除外文字列が含まれていた場合のリトライ回数の指定が可能．
+* エラーの出力異なる
+* リトライ方法が異なる
 
 ## zatlinマクロ
 zatlinマクロを使用することで，Rustでzatlin構文をほぼそのままで記述することが可能となります．
 ```rust
 let data = zatlin! {
-    Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
-    Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
-    
+    Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m"
+    Ce = "" | "b" | "d" | "g" | "m" | "n" | "h"
+
     Va = "a" | "á" | "à" | "ä";
     Ve = "e" | "é" | "è" | "ë";
     Vi = "i" | "í" | "ì" | "ï";
     Vo = "o" | "ó" | "ò" | "ö";
     Vu = "u" | "ú" | "ù" | "ü";
     Vy = "y" | "ý" | "ỳ" | "ÿ";
-    
-    Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
-    Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i";
-    Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
-    
-    % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ "y" | ^ "ý" | ^ "ỳ" | ^ "ÿ" | ^ "wu" | ^ "wú" | ^ "wù" | ^ "wü" | ^ "hy" | ^ "hý" | ^ "hỳ" | ^ "hÿ" | ^ "qy" | ^ "qý" | ^ "qỳ" | ^ "qÿ" | ^ "ry" | ^ "rý" | ^ "rỳ" | ^ "rÿ" | ^ "ny" | ^ "ný" | ^ "nỳ" | ^ "nÿ" | ^ "my" | ^ "mý" | ^ "mỳ" | ^ "mÿ";
+
+    Vxi = (Va | Ve | Vo) "i" | Vi ("a" | "e")
+    Vxu = (Va | Vo) "u" | Vu ("e" | "i")
+    Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu
+
+    % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ Vy | ^ "w" Vu | ^ ("h" | "q" | "r" | "n" | "m") Vy;
 }?;
 let result = zatlin::generate_by(&data)?;
 ```

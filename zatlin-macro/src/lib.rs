@@ -43,4 +43,50 @@ mod zatlin_macro_test {
 
         println!("{}", data);
     }
+
+    #[test]
+    fn check2() {
+        let data = zatlin_impl(quote! {
+            Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+            Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+            
+            Va = "a" | "á" | "à" | "ä";
+            Ve = "e" | "é" | "è" | "ë";
+            Vi = "i" | "í" | "ì" | "ï";
+            Vo = "o" | "ó" | "ò" | "ö";
+            Vu = "u" | "ú" | "ù" | "ü";
+            Vy = "y" | "ý" | "ỳ" | "ÿ";
+            
+            Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
+            Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i";
+            Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+            
+            % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ Vy | ^ "w" Vu | ^ "h" Vy | ^ "q" Vy | ^ "r" Vy | ^ "n" Vy | ^ "m" Vy;
+        });
+
+        println!("{}", data);
+    }
+
+    #[test]
+    fn check3() {
+        let data = zatlin_impl(quote! {
+            Cs = "" | "b" | "p" | "f" | "v" | "d" | "t" | "s" | "z" | "c" | "j" | "g" | "k" | "h" | "q" | "r" | "w" | "n" | "m";
+            Ce = "" | "b" | "d" | "g" | "m" | "n" | "h";
+            
+            Va = "a" | "á" | "à" | "ä";
+            Ve = "e" | "é" | "è" | "ë";
+            Vi = "i" | "í" | "ì" | "ï";
+            Vo = "o" | "ó" | "ò" | "ö";
+            Vu = "u" | "ú" | "ù" | "ü";
+            Vy = "y" | "ý" | "ỳ" | "ÿ";
+            
+            Vxi = Va "i" | Ve "i" | Vo "i" | Vi "a" | Vi "e";
+            Vxu = Va "u" | Vo "u" | Vu "e" | Vu "i";
+            Vx = Va | Ve | Vi | Vo | Vu | Vy | Vxi | Vxu;
+            
+            % Cs Vx Ce | Cs Vx Ce Cs Vx Ce - ^ ("y" | "ý" | "ỳ" | "ÿ") | ^ "w" ("u" | "ú" | "ù" | "ü") | ^ ("h" | "q" | "r" | "n" | "m") ("y" | "ý" | "ỳ" | "ÿ");
+        });
+
+        println!("{}", data);
+    }
 }

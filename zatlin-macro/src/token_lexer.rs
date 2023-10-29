@@ -5,8 +5,8 @@ use proc_macro2::{
 use syn::{
     parse::ParseStream,
     Result,
-    Token,
-    Ident, LitStr, LitInt, Error,
+    Token, parenthesized,
+    Ident, LitStr, LitInt, Error, token::Paren,
 };
 use quote::quote;
 
@@ -41,7 +41,7 @@ pub(crate) fn convert_zatlin(input: ParseStream) -> Result<TokenStream> {
             let mut #token_list_name: std::vec::Vec<&str> = vec![
                 #(#tokens),*
             ];
-            zatlin_internal::ZatlinData::try_from(#token_list_name)
+            zatlin::Data::try_from(#token_list_name)
         }
     })
 }
@@ -49,7 +49,7 @@ pub(crate) fn convert_zatlin(input: ParseStream) -> Result<TokenStream> {
 fn convert_expression(input: ParseStream) -> Result<TokenStream> {
     let mut patterns = Vec::new();
     let mut has_extract = false;
-    patterns.push(convert_pattern(input, false)?);
+    patterns.push(convert_pattern(input)?);
 
     while !input.is_empty() {
         let head = input.lookahead1();
@@ -63,7 +63,7 @@ fn convert_expression(input: ParseStream) -> Result<TokenStream> {
         } else if head.peek(Token![|]) {
             input.parse::<Token![|]>()?;
             patterns.push(quote!{ "|" });
-            patterns.push(convert_pattern(input, false)?);
+            patterns.push(convert_pattern(input)?);
         } else {
             return Err(Error::new(input.span(), "invalid token"));
         }
@@ -79,7 +79,7 @@ fn convert_expression(input: ParseStream) -> Result<TokenStream> {
             patterns.push(quote!{ "^" });
         }
 
-        let pattern = match convert_pattern(input, true) {
+        let pattern = match convert_pattern(input) {
             Ok(t) => t,
             Err(_) => return Err(Error::new(input.span(), "invalid Exclude Pattern")),
         };
@@ -102,7 +102,7 @@ fn convert_expression(input: ParseStream) -> Result<TokenStream> {
                 }
 
                 patterns.push(quote!{ "|" });
-                patterns.push(convert_pattern(input, true)?);
+                patterns.push(convert_pattern(input)?);
 
                 if let Ok(_) = input.parse::<Token![^]>() {
                     patterns.push(quote!{ "^" });
@@ -119,19 +119,21 @@ fn convert_expression(input: ParseStream) -> Result<TokenStream> {
     })
 }
 
-fn convert_pattern(input: ParseStream, is_exclude: bool) -> Result<TokenStream> {
+fn convert_pattern(input: ParseStream) -> Result<TokenStream> {
     let mut values = Vec::new();
 
     while !input.is_empty() {
         let head = input.lookahead1();
 
-        if head.peek(Ident) {
-            if is_exclude {
-                return Err(Error::new(input.span(), "cannot use variable in Exclude Pattern."));
-            } else {
-                let variable_name = input.parse::<Ident>()?.to_string();
-                values.push(quote!{ #variable_name });
-            }
+        if head.peek(Paren) {
+            let content;
+            let _ = parenthesized!(content in input);
+            let inner = convert_expression(&content)?;
+            values.push(quote!{ "(", #inner, ")" });
+        }
+        else if head.peek(Ident) {
+            let variable_name = input.parse::<Ident>()?.to_string();
+            values.push(quote!{ #variable_name });
         } else if head.peek(LitStr) {
             let value = "\"".to_owned() + &input.parse::<LitStr>()?.value() + "\"";
             values.push(quote!{ #value })
